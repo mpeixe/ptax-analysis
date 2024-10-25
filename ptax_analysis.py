@@ -13,22 +13,59 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="Análise PTAX", layout="wide")
 st.title("Análise e Projeção de PTAX")
 
-# Função para obter dados PTAX
-@st.cache_data
-def get_ptax_data(start_date):
-    try:
-        st.write("Tentando obter dados do Yahoo Finance...")
-        df = yf.download('USDBRL=X', start=start_date)
-        if df.empty:
-            st.error("Nenhum dado foi retornado do Yahoo Finance")
-            return pd.DataFrame()
-        df = df[['Close']]
-        df.columns = ['PTAX']
-        st.success(f"Dados obtidos com sucesso. Total de {len(df)} registros.")
-        return df
-    except Exception as e:
-        st.error(f"Erro ao obter dados: {str(e)}")
-        return pd.DataFrame()
+# Função para obter dados PTAX com retry
+@st.cache_data(ttl=3600)  # Cache por 1 hora
+def get_ptax_data(start_date, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            st.write(f"Tentativa {attempt + 1} de {max_retries} para obter dados...")
+            # Configurar o yfinance
+            yf.pdr_override()
+            
+            # Adicionar um pequeno delay entre tentativas
+            if attempt > 0:
+                time.sleep(2)
+            
+            # Tentar download com timeout maior
+            ticker = yf.Ticker("USDBRL=X")
+            df = ticker.history(start=start_date)
+            
+            if not df.empty:
+                df = df[['Close']]
+                df.columns = ['PTAX']
+                st.success(f"Dados obtidos com sucesso. Total de {len(df)} registros.")
+                return df
+            
+        except Exception as e:
+            st.warning(f"Tentativa {attempt + 1} falhou: {str(e)}")
+            if attempt == max_retries - 1:
+                # Na última tentativa, tentar criar dados simulados para demonstração
+                st.error("Não foi possível obter dados reais. Gerando dados simulados para demonstração.")
+                return generate_sample_data(start_date)
+    
+    return pd.DataFrame()
+
+# Função para gerar dados simulados (caso todas as tentativas falhem)
+def generate_sample_data(start_date):
+    end_date = datetime.now()
+    dates = pd.date_range(start=start_date, end=end_date, freq='B')
+    
+    # Gerar valores simulados começando em 5.0 com alguma variação
+    base_value = 5.0
+    noise = np.random.normal(0, 0.1, len(dates))
+    trend = np.linspace(0, 0.5, len(dates))
+    values = base_value + noise + trend
+    
+    df = pd.DataFrame({
+        'PTAX': values
+    }, index=dates)
+    
+    st.warning("""
+    ⚠️ Atenção: Usando dados simulados para demonstração.
+    Os valores mostrados são aproximações e não devem ser usados para decisões reais.
+    """)
+    
+    return df
 
 # Sidebar para controles
 st.sidebar.header("Configurações")
